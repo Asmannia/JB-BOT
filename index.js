@@ -6,14 +6,33 @@ const {
 
 const pino = require("pino");
 const fs = require("fs");
+const http = require("http");
+const qrcode = require("qrcode-terminal");
 
+// Server untuk Render
+const PORT = process.env.PORT || 3000;
+
+http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end("JB BOT is running!");
+}).listen(PORT, () => {
+    console.log(`🌐 Server running on port ${PORT}`);
+});
+
+// Data kewangan
 let data = {
     in: 0,
     out: 0
 };
 
 if (fs.existsSync("data.json")) {
-    data = JSON.parse(fs.readFileSync("data.json", "utf8"));
+    try {
+        data = JSON.parse(
+            fs.readFileSync("data.json", "utf8")
+        );
+    } catch (error) {
+        console.log("Data lama gagal dibaca.");
+    }
 }
 
 function saveData() {
@@ -41,10 +60,19 @@ async function startBot() {
 
     sock.ev.on("connection.update", (update) => {
 
-        const { connection, lastDisconnect } = update;
+        const {
+            connection,
+            lastDisconnect,
+            qr
+        } = update;
+
+        if (qr) {
+            console.log("📱 SCAN QR INI DENGAN WHATSAPP:");
+            qrcode.generate(qr, { small: true });
+        }
 
         if (connection === "open") {
-            console.log("✅ JB BOT CONNECTED");
+            console.log("✅ JB BOT CONNECTED!");
         }
 
         if (connection === "close") {
@@ -54,7 +82,10 @@ async function startBot() {
                 DisconnectReason.loggedOut;
 
             if (shouldReconnect) {
+                console.log("🔄 Reconnecting...");
                 startBot();
+            } else {
+                console.log("❌ WhatsApp logged out.");
             }
         }
     });
@@ -71,13 +102,14 @@ async function startBot() {
             msg.message.extendedTextMessage?.text ||
             "";
 
-        const command = text.trim().split(/\s+/);
-        const type = command[0]?.toLowerCase();
-        const amount = Number(command[1]);
+        const parts = text.trim().split(/\s+/);
+
+        const command = parts[0]?.toLowerCase();
+        const amount = Number(parts[1]);
 
         let reply = "";
 
-        if (type === ".in") {
+        if (command === ".in") {
 
             if (!amount || amount <= 0) {
                 reply = "❌ Contoh: .in 150";
@@ -92,7 +124,49 @@ async function startBot() {
             }
         }
 
-        else if (type === ".out") {
+        else if (command === ".out") {
 
             if (!amount || amount <= 0) {
-                reply = "❌ Contoh: .out 
+                reply = "❌ Contoh: .out 50";
+            } else {
+
+                data.out += amount;
+                saveData();
+
+                reply =
+                    `✅ OUT -${money(amount)}\n\n` +
+                    `💸 Total OUT: ${money(data.out)}`;
+            }
+        }
+
+        else if (command === ".info") {
+
+            const bersih = data.in - data.out;
+
+            reply =
+                `📊 *JB INFO*\n\n` +
+                `💰 IN     : ${money(data.in)}\n` +
+                `💸 OUT    : ${money(data.out)}\n` +
+                `📈 BERSIH : ${money(bersih)}`;
+        }
+
+        else if (command === ".reset") {
+
+            data.in = 0;
+            data.out = 0;
+
+            saveData();
+
+            reply = "♻️ Rekod JB telah di-reset.";
+        }
+
+        if (reply) {
+            await sock.sendMessage(
+                msg.key.remoteJid,
+                { text: reply }
+            );
+        }
+    });
+}
+
+startBot();
