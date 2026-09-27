@@ -1,76 +1,98 @@
+const {
+    default: makeWASocket,
+    useMultiFileAuthState,
+    DisconnectReason
+} = require("@whiskeysockets/baileys");
+
+const pino = require("pino");
 const fs = require("fs");
 
 let data = {
-  in: 0,
-  out: 0
+    in: 0,
+    out: 0
 };
 
-function loadData() {
-  try {
-    if (fs.existsSync("data.json")) {
-      data = JSON.parse(fs.readFileSync("data.json", "utf8"));
-    }
-  } catch (error) {
-    console.log("Gagal baca data.");
-  }
+if (fs.existsSync("data.json")) {
+    data = JSON.parse(fs.readFileSync("data.json", "utf8"));
 }
 
 function saveData() {
-  fs.writeFileSync("data.json", JSON.stringify(data, null, 2));
+    fs.writeFileSync(
+        "data.json",
+        JSON.stringify(data, null, 2)
+    );
 }
 
-function processCommand(message) {
-  const parts = message.trim().split(/\s+/);
-  const command = parts[0].toLowerCase();
-  const amount = Number(parts[1]);
-  
-  if (command === ".in") {
-    if (!amount || amount <= 0) {
-      return "❌ Contoh: .in 150";
-    }
-    
-    data.in += amount;
-    saveData();
-    
-    return `✅ IN +RM${amount.toFixed(2)}`;
-  }
-  
-  if (command === ".out") {
-    if (!amount || amount <= 0) {
-      return "❌ Contoh: .out 50";
-    }
-    
-    data.out += amount;
-    saveData();
-    
-    return `✅ OUT -RM${amount.toFixed(2)}`;
-  }
-  
-  if (command === ".info") {
-    const net = data.in - data.out;
-    
-    return `📊 JB INFO
-
-💰 IN     : RM${data.in.toFixed(2)}
-💸 OUT    : RM${data.out.toFixed(2)}
-📈 BERSIH : RM${net.toFixed(2)}`;
-  }
-  
-  if (command === ".reset") {
-    data.in = 0;
-    data.out = 0;
-    saveData();
-    
-    return "♻️ Semua rekod kewangan telah di-reset.";
-  }
-  
-  return null;
+function money(value) {
+    return `RM${value.toFixed(2)}`;
 }
 
-loadData();
+async function startBot() {
 
-console.log("JB BOT SYSTEM READY");
+    const { state, saveCreds } =
+        await useMultiFileAuthState("auth_info");
 
-console.log(processCommand(".in 150"));
-console.log(processCommand(".out 50"));
-console.log(processCommand(".info"));
+    const sock = makeWASocket({
+        auth: state,
+        logger: pino({ level: "silent" })
+    });
+
+    sock.ev.on("creds.update", saveCreds);
+
+    sock.ev.on("connection.update", (update) => {
+
+        const { connection, lastDisconnect } = update;
+
+        if (connection === "open") {
+            console.log("✅ JB BOT CONNECTED");
+        }
+
+        if (connection === "close") {
+
+            const shouldReconnect =
+                lastDisconnect?.error?.output?.statusCode !==
+                DisconnectReason.loggedOut;
+
+            if (shouldReconnect) {
+                startBot();
+            }
+        }
+    });
+
+    sock.ev.on("messages.upsert", async ({ messages }) => {
+
+        const msg = messages[0];
+
+        if (!msg.message) return;
+        if (msg.key.fromMe) return;
+
+        const text =
+            msg.message.conversation ||
+            msg.message.extendedTextMessage?.text ||
+            "";
+
+        const command = text.trim().split(/\s+/);
+        const type = command[0]?.toLowerCase();
+        const amount = Number(command[1]);
+
+        let reply = "";
+
+        if (type === ".in") {
+
+            if (!amount || amount <= 0) {
+                reply = "❌ Contoh: .in 150";
+            } else {
+
+                data.in += amount;
+                saveData();
+
+                reply =
+                    `✅ IN +${money(amount)}\n\n` +
+                    `💰 Total IN: ${money(data.in)}`;
+            }
+        }
+
+        else if (type === ".out") {
+
+            if (!amount || amount <= 0) {
+                reply = "❌ Contoh: .out 
