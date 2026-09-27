@@ -57,7 +57,22 @@ async function startBot() {
     });
 
     sock.ev.on("creds.update", saveCreds);
+if (!state.creds.registered) {
+    const phoneNumber = process.env.PHONE_NUMBER;
 
+    if (phoneNumber) {
+        setTimeout(async () => {
+            try {
+                const code = await sock.requestPairingCode(phoneNumber);
+                console.log("🔐 PAIRING CODE:", code);
+            } catch (error) {
+                console.log("❌ Pairing error:", error.message);
+            }
+        }, 3000);
+    } else {
+        console.log("❌ PHONE_NUMBER belum diset.");
+    }
+}
     sock.ev.on("connection.update", async (update) => {
 
         const {
@@ -101,7 +116,26 @@ if (connection === "connecting") {
         }
     });
 
-    sock.ev.on("messages.upsert", async ({ messages }) => {
+    sock.ev.on("connection.update", async (update) => {
+    const { connection, lastDisconnect } = update;
+
+    if (connection === "open") {
+        console.log("✅ JB BOT CONNECTED!");
+    }
+
+    if (connection === "close") {
+        const shouldReconnect =
+            lastDisconnect?.error?.output?.statusCode !==
+            DisconnectReason.loggedOut;
+
+        if (shouldReconnect) {
+            console.log("🔄 Reconnecting...");
+            startBot();
+        } else {
+            console.log("❌ WhatsApp logged out.");
+        }
+    }
+});
 
         const msg = messages[0];
 
