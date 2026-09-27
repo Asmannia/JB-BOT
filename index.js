@@ -7,19 +7,27 @@ const {
 const pino = require("pino");
 const fs = require("fs");
 const http = require("http");
-const qrcode = require("qrcode-terminal");
 
-// Server untuk Render
+// =========================
+// RENDER WEB SERVER
+// =========================
+
 const PORT = process.env.PORT || 3000;
 
 http.createServer((req, res) => {
-    res.writeHead(200);
+    res.writeHead(200, {
+        "Content-Type": "text/plain"
+    });
+
     res.end("JB BOT is running!");
 }).listen(PORT, () => {
     console.log(`🌐 Server running on port ${PORT}`);
 });
 
-// Data kewangan
+// =========================
+// DATA KEWANGAN
+// =========================
+
 let data = {
     in: 0,
     out: 0
@@ -31,7 +39,7 @@ if (fs.existsSync("data.json")) {
             fs.readFileSync("data.json", "utf8")
         );
     } catch (error) {
-        console.log("Data lama gagal dibaca.");
+        console.log("❌ Data lama gagal dibaca.");
     }
 }
 
@@ -46,6 +54,10 @@ function money(value) {
     return `RM${value.toFixed(2)}`;
 }
 
+// =========================
+// START BOT
+// =========================
+
 async function startBot() {
 
     const { state, saveCreds } =
@@ -53,165 +65,258 @@ async function startBot() {
 
     const sock = makeWASocket({
         auth: state,
-        logger: pino({ level: "silent" })
+        logger: pino({
+            level: "silent"
+        })
     });
 
+    // Simpan credentials
     sock.ev.on("creds.update", saveCreds);
-if (!state.creds.registered) {
-    const phoneNumber = process.env.PHONE_NUMBER;
 
-    if (phoneNumber) {
-        setTimeout(async () => {
-            try {
-                const code = await sock.requestPairingCode(phoneNumber);
-                console.log("🔐 PAIRING CODE:", code);
-            } catch (error) {
-                console.log("❌ Pairing error:", error.message);
-            }
-        }, 3000);
-    } else {
-        console.log("❌ PHONE_NUMBER belum diset.");
-    }
-}
-    sock.ev.on("connection.update", async (update) => {
+    // =========================
+    // PAIRING CODE
+    // =========================
 
-        const {
-            connection,
-            lastDisconnect,
-            qr
-        } = update;
+    if (!state.creds.registered) {
 
-        if (qr) {
-    console.log("📱 QR CODE GENERATED");
-}
+        const phoneNumber = process.env.PHONE_NUMBER;
 
-if (connection === "connecting") {
-    const phoneNumber = process.env.PHONE_NUMBER;
+        if (phoneNumber) {
 
-    if (phoneNumber && !state.creds.registered) {
-        try {
-            const code = await sock.requestPairingCode(phoneNumber);
-            console.log("🔐 PAIRING CODE:", code);
-        } catch (error) {
-            console.log("❌ Pairing code error:", error.message);
-        }
-    }
-}
-        if (connection === "open") {
-            console.log("✅ JB BOT CONNECTED!");
-        }
+            setTimeout(async () => {
 
-        if (connection === "close") {
+                try {
 
-            const shouldReconnect =
-                lastDisconnect?.error?.output?.statusCode !==
-                DisconnectReason.loggedOut;
+                    const code =
+                        await sock.requestPairingCode(
+                            phoneNumber
+                        );
 
-            if (shouldReconnect) {
-                console.log("🔄 Reconnecting...");
-                startBot();
-            } else {
-                console.log("❌ WhatsApp logged out.");
-            }
-        }
-    });
+                    console.log(
+                        "🔐 PAIRING CODE:",
+                        code
+                    );
 
-    sock.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect } = update;
+                } catch (error) {
 
-    if (connection === "open") {
-        console.log("✅ JB BOT CONNECTED!");
-    }
+                    console.log(
+                        "❌ Pairing error:",
+                        error.message
+                    );
 
-    if (connection === "close") {
-        const shouldReconnect =
-            lastDisconnect?.error?.output?.statusCode !==
-            DisconnectReason.loggedOut;
+                }
 
-        if (shouldReconnect) {
-            console.log("🔄 Reconnecting...");
-            startBot();
+            }, 3000);
+
         } else {
-            console.log("❌ WhatsApp logged out.");
+
+            console.log(
+                "❌ PHONE_NUMBER belum diset."
+            );
+
         }
     }
-});
 
-        const msg = messages[0];
+    // =========================
+    // CONNECTION
+    // =========================
 
-        if (!msg.message) return;
-        if (msg.key.fromMe) return;
+    sock.ev.on(
+        "connection.update",
+        async (update) => {
 
-        const text =
-            msg.message.conversation ||
-            msg.message.extendedTextMessage?.text ||
-            "";
+            const {
+                connection,
+                lastDisconnect
+            } = update;
 
-        const parts = text.trim().split(/\s+/);
+            if (connection === "open") {
 
-        const command = parts[0]?.toLowerCase();
-        const amount = Number(parts[1]);
+                console.log(
+                    "✅ JB BOT CONNECTED!"
+                );
 
-        let reply = "";
+            }
 
-        if (command === ".in") {
+            if (connection === "close") {
 
-            if (!amount || amount <= 0) {
-                reply = "❌ Contoh: .in 150";
-            } else {
+                const shouldReconnect =
+                    lastDisconnect?.error
+                        ?.output?.statusCode !==
+                    DisconnectReason.loggedOut;
 
-                data.in += amount;
-                saveData();
+                if (shouldReconnect) {
 
-                reply =
-                    `✅ IN +${money(amount)}\n\n` +
-                    `💰 Total IN: ${money(data.in)}`;
+                    console.log(
+                        "🔄 Reconnecting..."
+                    );
+
+                    startBot();
+
+                } else {
+
+                    console.log(
+                        "❌ WhatsApp logged out."
+                    );
+
+                }
             }
         }
+    );
 
-        else if (command === ".out") {
+    // =========================
+    // MESSAGE HANDLER
+    // =========================
 
-            if (!amount || amount <= 0) {
-                reply = "❌ Contoh: .out 50";
-            } else {
+    sock.ev.on(
+        "messages.upsert",
+        async ({ messages }) => {
 
-                data.out += amount;
-                saveData();
+            try {
 
-                reply =
-                    `✅ OUT -${money(amount)}\n\n` +
-                    `💸 Total OUT: ${money(data.out)}`;
+                const msg = messages[0];
+
+                if (!msg) return;
+
+                if (!msg.message) return;
+
+                if (msg.key.fromMe) return;
+
+                const text =
+                    msg.message.conversation ||
+                    msg.message
+                        .extendedTextMessage?.text ||
+                    "";
+
+                const parts =
+                    text.trim().split(/\s+/);
+
+                const command =
+                    parts[0]?.toLowerCase();
+
+                const amount =
+                    Number(parts[1]);
+
+                let reply = "";
+
+                // =========================
+                // .IN
+                // =========================
+
+                if (command === ".in") {
+
+                    if (
+                        !amount ||
+                        amount <= 0
+                    ) {
+
+                        reply =
+                            "❌ Contoh: .in 150";
+
+                    } else {
+
+                        data.in += amount;
+
+                        saveData();
+
+                        reply =
+                            `✅ IN +${money(amount)}\n\n` +
+                            `💰 Total IN: ${money(data.in)}`;
+                    }
+                }
+
+                // =========================
+                // .OUT
+                // =========================
+
+                else if (command === ".out") {
+
+                    if (
+                        !amount ||
+                        amount <= 0
+                    ) {
+
+                        reply =
+                            "❌ Contoh: .out 50";
+
+                    } else {
+
+                        data.out += amount;
+
+                        saveData();
+
+                        reply =
+                            `✅ OUT -${money(amount)}\n\n` +
+                            `💸 Total OUT: ${money(data.out)}`;
+                    }
+                }
+
+                // =========================
+                // .INFO
+                // =========================
+
+                else if (command === ".info") {
+
+                    const bersih =
+                        data.in - data.out;
+
+                    reply =
+                        `📊 *JB INFO*\n\n` +
+                        `💰 IN     : ${money(data.in)}\n` +
+                        `💸 OUT    : ${money(data.out)}\n` +
+                        `📈 BERSIH : ${money(bersih)}`;
+                }
+
+                // =========================
+                // .RESET
+                // =========================
+
+                else if (command === ".reset") {
+
+                    data.in = 0;
+                    data.out = 0;
+
+                    saveData();
+
+                    reply =
+                        "♻️ Rekod JB telah di-reset.";
+                }
+
+                // =========================
+                // SEND REPLY
+                // =========================
+
+                if (reply) {
+
+                    await sock.sendMessage(
+                        msg.key.remoteJid,
+                        {
+                            text: reply
+                        }
+                    );
+                }
+
+            } catch (error) {
+
+                console.log(
+                    "❌ Message error:",
+                    error.message
+                );
+
             }
         }
-
-        else if (command === ".info") {
-
-            const bersih = data.in - data.out;
-
-            reply =
-                `📊 *JB INFO*\n\n` +
-                `💰 IN     : ${money(data.in)}\n` +
-                `💸 OUT    : ${money(data.out)}\n` +
-                `📈 BERSIH : ${money(bersih)}`;
-        }
-
-        else if (command === ".reset") {
-
-            data.in = 0;
-            data.out = 0;
-
-            saveData();
-
-            reply = "♻️ Rekod JB telah di-reset.";
-        }
-
-        if (reply) {
-            await sock.sendMessage(
-                msg.key.remoteJid,
-                { text: reply }
-            );
-        }
-    });
+    );
 }
 
-startBot();
+// =========================
+// RUN BOT
+// =========================
+
+startBot().catch((error) => {
+
+    console.log(
+        "❌ Bot error:",
+        error.message
+    );
+
+});
