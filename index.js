@@ -67,10 +67,21 @@ async function startBot() {
         } = update;
 
         if (qr) {
-            console.log("📱 SCAN QR INI DENGAN WHATSAPP:");
-            qrcode.generate(qr, { small: true });
-        }
+    console.log("📱 QR CODE GENERATED");
+}
 
+if (connection === "connecting") {
+    const phoneNumber = process.env.PHONE_NUMBER;
+
+    if (phoneNumber && !state.creds.registered) {
+        try {
+            const code = await sock.requestPairingCode(phoneNumber);
+            console.log("🔐 PAIRING CODE:", code);
+        } catch (error) {
+            console.log("❌ Pairing code error:", error.message);
+        }
+    }
+}
         if (connection === "open") {
             console.log("✅ JB BOT CONNECTED!");
         }
